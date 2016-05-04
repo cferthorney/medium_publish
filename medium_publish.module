@@ -115,7 +115,7 @@ function medium_publish_menu() {
 }
 
 /**
- * Access callback for meta tag configuration instances.
+ * Access callback for medium_publish configuration instances.
  */
 function medium_publish_config_access($op, $config = NULL) {
   if (!user_access('administer medium ')) {

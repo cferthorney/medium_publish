@@ -15,7 +15,7 @@ function medium_publish_config_overview() {
   $client_id = variable_get('medium_publish_client_id', FALSE);
   $client_secret = variable_get('medium_publish_client_secret', FALSE);
   if (!($client_id && $client_secret)) {
-    drupal_set_message(t('Medium.com integration must be configured for this to work. Please go to <a href="@link">settings</a> and configure it.', array(
+    drupal_set_message(t('Medium integration must be configured for this to work. Please go to <a href="@link">settings</a> and configure it.', array(
       '@link' => url('admin/config/content/medium/settings'),
     )), 'warning');
   }
@@ -240,7 +240,7 @@ function medium_publish_config_enable($config) {
   ctools_export_crud_enable('medium_publish_config', $config);
 
   $label = drupal_ucfirst($config->instance);
-  drupal_set_message(t('The meta tag defaults for @label have been enabled.', array('@label' => $label)));
+  drupal_set_message(t('The medium export for @label have been enabled.', array('@label' => $label)));
   drupal_goto();
 }
 
@@ -255,7 +255,7 @@ function medium_publish_config_disable($config) {
   ctools_export_crud_disable('medium_publish_config', $config);
 
   $label = drupal_ucfirst($config->instance);
-  drupal_set_message(t('The meta tag defaults for @label have been disabed.', array('@label' => $label)));
+  drupal_set_message(t('The medium export for @label have been disabed.', array('@label' => $label)));
   drupal_goto();
 }
 
@@ -268,7 +268,7 @@ function medium_publish_config_delete_form($form, &$form_state, $config) {
 
   $label = drupal_ucfirst($config->instance);
   $delete = medium_publish_config_access('delete', $config);
-  $title = $delete ? t('Are you sure you want to delete the config for @label?', array('@label' => $label)) : t('Are you sure you want to revert the meta tag defaults for @label?', array('@label' => $label));
+  $title = $delete ? t('Are you sure you want to delete the config for @label?', array('@label' => $label)) : t('Are you sure you want to revert the config for @label?', array('@label' => $label));
 
   return confirm_form(
     $form,
@@ -287,7 +287,7 @@ function medium_publish_config_delete_form_submit($form, &$form_state) {
 
   $label = drupal_ucfirst($config->instance);
   $delete = medium_publish_config_access('delete', $config);
-  $title = $delete ? t('The meta tag defaults for @label have been deleted.', array('@label' => $label)) : t('The meta tag defaults for @label have been reverted.', array('@label' => $label));
+  $title = $delete ? t('The config for @label have been deleted.', array('@label' => $label)) : t('The config for @label have been reverted.', array('@label' => $label));
   drupal_set_message($title);
 
   $form_state['redirect'] = 'admin/config/content/medium';
