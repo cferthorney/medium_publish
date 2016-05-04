@@ -1,0 +1,119 @@
+<?php
+/**
+ * @file
+ * medium.install
+ */
+
+/**
+ * Implements hook_install().
+ *
+ * @TODO Generate the token/code/thing.
+ */
+// function medium_publish_install() {}
+
+/**
+ * Implements hook_schema().
+ */
+function medium_publish_schema() {
+  $schema['medium_publish_users'] = array(
+    'fields' => array(
+      'uid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'access_token' => array(
+        'type' => 'varchar',
+        'not null' => TRUE,
+        'default' => '',
+        'length' => 120,
+      ),
+      'refresh_token' => array(
+        'type' => 'varchar',
+        'not null' => TRUE,
+        'default' => '',
+        'length' => 120,
+      ),
+      'expires_at' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'scopes' => array(
+        'type' => 'varchar',
+        'not null' => TRUE,
+        'default' => '',
+        'length' => 255,
+      ),
+    ),
+    'primary key' => array('uid'),
+  );
+  $schema['medium_publish_nodes'] = array(
+    'description' => 'Keep track of published nodes.',
+    'fields' => array(
+      'nid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'uid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'published' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+  );
+  $schema['medium_publish_config'] = array(
+    'description' => t('Holds content type setup for Medium publishing.'),
+    'export' => array(
+      'key' => 'instance',
+      'key name' => 'Instance',
+      'primary key' => 'pid',
+      'identifier' => 'config', // Exports will be defined as $preset
+      'default hook' => 'medium_publish_config_default',  // Function hook name.
+      'api' => array(
+        'owner' => 'medium_publish',
+        'api' => 'medium_publish',  // Base name for api include files.
+        'minimum_version' => 1,
+        'current_version' => 1,
+      ),
+    ),
+    'fields' => array(
+      'pid' => array(
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'Primary ID field for the table. Not used for anything except internal lookups.',
+        'no export' => TRUE, // Do not export database-only keys.
+      ),
+      'instance' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'The machine-name of the configuration, typically entity-type:bundle.',
+      ),
+      'config' => array(
+        'type' => 'blob',
+        'size' => 'big',
+        'not null' => TRUE,
+        'serialize' => TRUE,
+        'description' => 'Serialized data containing the meta tag configuration.',
+        'translatable' => TRUE,
+      ),
+    ),
+    'primary key' => array('pid'),
+    'unique keys' => array(
+      'instance' => array('instance'),
+    ),
+  );
+  return $schema;
+}

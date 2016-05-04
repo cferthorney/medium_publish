@@ -1,0 +1,562 @@
+<?php
+/**
+ * @file
+ * Medium.module.
+ *
+ * Api documentation: https://github.com/Medium/medium-api-docs.
+ */
+
+/**
+ * Implements hook_permission().
+ */
+function medium_permission() {
+  $permissions['administer medium'] = array(
+    'title' => t('Administer Medium settings'),
+    'restrict access' => TRUE,
+    'description' => t('Configure the integration and which content types are allowed.'),
+  );
+  $permissions['publish to sitewide medium'] = array(
+    'title' => t('Publish to Medium with sitewide account'),
+    'description' => t('Write content and publish it to Medium.com with a common account'),
+  );
+  $permissions['publish to medium'] = array(
+    'title' => t('Publish to Medium'),
+    'description' => t('Write content and publish it to Medium.com'),
+  );
+
+  return $permissions;
+}
+
+/**
+ * Implements hook_menu().
+ */
+function medium_publish_menu() {
+  $items['admin/config/content/medium'] = array(
+    'title' => 'Medium',
+    'description' => 'Configure Medium defaults.',
+    'page callback' => 'medium_publish_config_overview',
+    'access arguments' => array('administer medium'),
+    'file' => 'medium_publish.admin.inc',
+  );
+  $items['admin/config/content/medium/config'] = array(
+    'title' => 'Configuration',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+  );
+  $items['admin/config/content/medium/config/add'] = array(
+    'title' => 'Add config',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('medium_publish_config_add_form'),
+    'access arguments' => array('administer medium'),
+    'file' => 'medium_publish.admin.inc',
+    'type' => MENU_LOCAL_ACTION,
+  );
+  $items['admin/config/content/medium/config/%medium_publish_config'] = array(
+    'title callback' => 'medium_publish_config_title',
+    'title arguments' => array(5),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('medium_publish_config_edit_form', 5),
+    'access arguments' => array('administer medium'),
+    'file' => 'medium_publish.admin.inc',
+  );
+  $items['admin/config/content/medium/config/%medium_publish_config/enable'] = array(
+    'title' => 'Enable',
+    'page callback' => 'medium_publish_config_enable',
+    'page arguments' => array(5),
+    'access callback' => 'medium_publish_config_access',
+    'access arguments' => array('enable', 5),
+    'file' => 'medium_publish.admin.inc',
+  );
+  $items['admin/config/content/medium/config/%medium_publish_config/disable'] = array(
+    'title' => 'Disable',
+    'page callback' => 'medium_publish_config_disable',
+    'page arguments' => array(5),
+    'access callback' => 'medium_publish_config_access',
+    'access arguments' => array('disable', 5),
+    'file' => 'medium_publish.admin.inc',
+  );
+  $items['admin/config/content/medium/config/%medium_publish_config/delete'] = array(
+    'title' => 'Delete',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('medium_publish_config_delete_form', 5),
+    'access callback' => 'medium_publish_config_access',
+    'access arguments' => array('delete', 5),
+    'file' => 'medium_publish.admin.inc',
+  );
+
+  $items['admin/config/content/medium/settings'] = array(
+    'title' => 'Medium Settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('medium_publish_admin_settings_form'),
+    'access arguments' => array('administer medium'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 30,
+    'file' => 'medium_publish.admin.inc',
+  );
+
+  $items['api/medium'] = array(
+    'title' => 'OAuth callback',
+    'description' => 'Handle requests from Medium.com',
+    'page callback' => 'medium_publish_auth_callback',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['user/%user/medium'] = array(
+    'title' => 'Medium.com Integration',
+    'description' => 'Allow users to connect',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('medium_publish_user_info', 1),
+    'access arguments' => array('publish to medium'),
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  return $items;
+}
+
+/**
+ * Access callback for meta tag configuration instances.
+ */
+function medium_publish_config_access($op, $config = NULL) {
+  if (!user_access('administer medium ')) {
+    return FALSE;
+  }
+
+  if ($op == 'enable') {
+    return !empty($config->disabled);
+  }
+  elseif ($op == 'disable') {
+    return empty($config->disabled);
+  }
+  elseif ($op == 'delete') {
+    return ($config->export_type & EXPORT_IN_DATABASE) && !($config->export_type & EXPORT_IN_CODE);
+  }
+
+  return FALSE;
+}
+
+/**
+ * Menu callback for authentication flow.
+ */
+function medium_publish_auth_callback() {
+  global $user;
+
+  if ($user->uid == 0) {
+    return drupal_access_denied();
+  }
+
+  $client_id = variable_get('medium_publish_client_id', FALSE);
+  $client_secret = variable_get('medium_publish_client_secret', FALSE);
+
+  if (!$client_id || !$client_secret) {
+    return drupal_access_denied();
+  }
+
+  if (!isset($_GET['code'])) {
+    return drupal_access_denied();
+  }
+
+  $authorization_code = $_GET['code'];
+
+  $credentials = [
+    'client_id' => $client_id,
+    'client_secret' => $client_secret,
+    'redirect_url' => 'http://da58d695.ngrok.io/api/medium',
+    'state' => 'somesecret',
+    'scopes' => 'basicProfile,publishPost',
+  ];
+
+  $medium = new MediumDrupal($credentials);
+
+  $data = $medium->authenticate($authorization_code);
+
+  medium_publish_save_user_credentials($user, $data);
+
+  drupal_set_message('Successfully connected to Medium');
+  drupal_goto();
+}
+
+/**
+ * Save Medium information to database.
+ */
+function medium_publish_save_user_credentials($user, $credentials) {
+  $result = db_select('medium_publish_users', 'm')
+    ->fields('m')
+    ->condition('uid', $user->uid, '=')
+    ->execute()
+    ->fetchAssoc();
+
+  if ($result) {
+    // Existing user.
+    $user_updated = db_update('medium_publish_users')
+      ->fields(array(
+        'access_token' => $credentials['access_token'],
+        'refresh_token' => $credentials['refresh_token'],
+        'expires_at' => $credentials['expires_at'],
+        'scopes' => implode(',', $credentials['scope']),
+      ))
+      ->condition('uid', $user->uid, '=')
+      ->execute();
+  }
+  else {
+    // New user.
+    $medium_user = db_insert('medium_publish_users')
+      ->fields(array(
+        'uid' => $user->uid,
+        'access_token' => $credentials['access_token'],
+        'refresh_token' => $credentials['refresh_token'],
+        'expires_at' => $credentials['expires_at'],
+        'scopes' => implode(',', $credentials['scope']),
+      ))
+      ->execute();
+  }
+}
+
+/**
+ * Implements hook_ctools_plugin_api().
+ *
+ * Tell CTools that we support the default_mymodule_presets API.
+ */
+function medium_publish_ctools_plugin_api($owner, $api) {
+  if ($owner == 'medium_publish' && $api == 'medium_publish') {
+    return array('version' => 1);
+  }
+}
+
+/**
+ * Implements hook_medium_publish_config_default().
+ *
+ * @TODO Provide a example and the option to disable/enable.
+ */
+/*Function medium_medium_publish_config_default() {
+$export = array();
+
+$preset = new stdClass;
+$preset->api_version = 1;
+$preset->name = 'my_default_preset';
+$preset->admin_title = 'Default preset';
+$preset->mydata = 'x';
+$export['my_default_preset'] = $preset;
+
+return $export;
+}*/
+
+/**
+ * Load a medium configuration record.
+ */
+function medium_publish_config_load($instance) {
+  $results = medium_publish_config_load_multiple(array($instance));
+  return !empty($results[$instance]) ? $results[$instance] : FALSE;
+}
+
+/**
+ * Load multiple medium configuration records.
+ */
+function medium_publish_config_load_multiple(array $instances) {
+  // Load the data.
+  ctools_include('export');
+  $configs = ctools_export_load_object('medium_publish_config', 'names', $instances);
+
+  return $configs;
+}
+
+/**
+ * Save a medium configuration record to the database.
+ */
+function medium_publish_config_save($config) {
+  $config->is_new = empty($config->pid);
+
+  // Allow modules to alter the configuration before it is saved using
+  // hook_medium_publish_config_presave().
+  module_invoke_all('medium_publish_config_presave', $config);
+
+  if ($config->is_new) {
+    drupal_write_record('medium_publish_config', $config);
+
+    // Allow modules to act upon the record insertion using
+    // hook_medium_publish_config_insert().
+    module_invoke_all('medium_publish_config_insert', $config);
+  }
+  else {
+    drupal_write_record('medium_publish_config', $config, array('pid'));
+
+    // Allow modules to act upon the record update using
+    // hook_medium_publish_config_insert().
+    module_invoke_all('medium_publish_config_update', $config);
+  }
+
+  unset($config->is_new);
+}
+
+/**
+ * Delete a medium configuration record.
+ */
+function medium_publish_config_delete($config) {
+  db_delete('medium_publish_config')
+    ->condition('instance', $config->instance)
+    ->execute();
+
+  // Allow modules to act upon the record deletion using
+  // hook_medium_publish_config_delete().
+  module_invoke_all('medium_publish_config_delete', $config);
+}
+
+/**
+ * Form defining tokens for Medium.com.
+ *
+ * @TODO Write descriptions and better titles.
+ */
+function medium_publish_config_form(array &$form, $instance, array $config = array()) {
+  $form['medium'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Medium'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+    '#multilingual' => TRUE,
+    '#tree' => TRUE,
+    '#access' => user_access('administer medium'),
+    '#weight' => 40,
+    '#attributes' => array(
+      'class' => array('medium-form'),
+    ),
+  );
+
+  $form['medium']['intro_text'] = array(
+    '#markup' => '<p>' . t('Configure the medium export.') . '</p>',
+    '#weight' => -10,
+  );
+
+  $form['medium']['token_tree'] = array(
+    '#theme' => 'token_tree',
+    '#token_types' => array('node'),
+  );
+  $form['medium']['title'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Title'),
+    '#default_value' => (isset($config['title']) ? $config['title'] : ''),
+  );
+  $form['medium']['content'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Content'),
+    '#default_value' => (isset($config['content']) ? $config['content'] : ''),
+  );
+  $form['medium']['format'] = array(
+    '#type' => 'select',
+    '#title' => t('Select format of posts'),
+    '#default_value' => (isset($config['format']) ? $config['format'] : 'html'),
+    '#options' => array(
+      'html' => 'HTML (Recommended)',
+      'markdown' => 'Markdown',
+    ),
+  );
+  $form['medium']['status'] = array(
+    '#type' => 'select',
+    '#title' => t('Select format of posts'),
+    '#default_value' => (isset($config['status']) ? $config['status'] : ''),
+    '#options' => array(
+      'public' => 'Public',
+      'draft' => 'Draft',
+      'unlisted' => 'Unlisted',
+    ),
+  );
+  $form['medium']['canonical'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Canonical URL'),
+    '#default_value' => (isset($config['canonical']) ? $config['canonical'] : ''),
+  );
+  $form['medium']['tags'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Tags'),
+    '#default_value' => (isset($config['tags']) ? $config['tags'] : ''),
+  );
+}
+
+/**
+ * Implements hook_form_alter().
+ *
+ * If the user has access and content type is configured, add a form element.
+ * then, in hook_insert or update check for this value and do something.
+ */
+function medium_publish_form_alter(&$form, &$form_state, $form_id) {
+  if (!empty($form['#node_edit_form'])) {
+    $node = $form['#node'];
+
+    if (!medium_publish_config_load($node->type) || !user_access('publish to medium')) {
+      return;
+    }
+
+    if (isset($node->nid) && $node->nid > 0) {
+      // Existing node. Check for publishing.
+      if (medium_node_is_published($node)) {
+        return;
+      }
+    }
+
+    $form['medium'] = array(
+      '#type' => 'fieldset',
+      '#group' => 'additional_settings',
+      '#title' => 'Medium.com',
+      '#tree' => TRUE,
+    );
+    $form['medium']['publish'] = array(
+      '#type' => 'checkbox',
+      '#default_value' => 0,
+      '#title' => 'Publish this node to Medium.com',
+      '#description' => 'Checking this node will publish it to ...',
+    );
+    $form['medium']['user'] = array(
+      '#type' => 'select',
+      '#default_value' => 'me',
+      '#title' => 'Publish this node to Medium.com',
+      '#description' => 'Checking this node will publish it to ...',
+      '#options' => array(
+        'me' => 'My account',
+        'something' => 'Facebook Inc',
+        'times' => 'Times (Publication)',
+      ),
+    );
+  }
+}
+
+/**
+ * Implements hook_node_insert().
+ */
+function medium_publish_node_insert($node) {
+  if (isset($node->medium) && $node->medium['publish'] == 1) {
+    // Publish.
+    drupal_set_message('Publishing to Medium.com (dummy)');
+    medium_publish_article($node->medium['user'], $node);
+  }
+}
+
+/**
+ * Implements hook_node_update().
+ */
+function medium_publish_node_update($node) {
+  if (isset($node->medium) && $node->medium['publish'] == 1) {
+    // Publish.
+    drupal_set_message('Publishing to Medium.com (dummy)');
+    medium_publish_article($node->medium['user'], $node);
+  }
+}
+
+/**
+ * Check if node is already published.
+ *
+ * Because of the current state of the Medium API there is no update
+ * option, so we need to know which nodes have been published.
+ */
+function medium_publish_node_is_published($node) {
+  $node = db_select('medium_published_nodes', 'p')
+    ->fields('p')
+    ->condition('nid', $node->nid)
+    ->execute()
+    ->fetchAssoc();
+
+  if ($node) {
+    return TRUE;
+  }
+  return FALSE;
+}
+
+/**
+ * Load the access tokens this user may use.
+ */
+function medium_publish_load_access_token($uid) {
+  $user_info = db_select('medium_publish_users', 'm')
+    ->fields('m')
+    ->condition('uid', $uid)
+    ->execute()
+    ->fetchAssoc();
+
+  if ($user_info) {
+    return $user_info['access_token'];
+  }
+  return FALSE;
+}
+
+/**
+ * Delete user information.
+ */
+function medium_publish_delete_user_data($access_token) {
+  $row_deleted = db_delete('medium_publish_users')
+    ->condition('access_token', $access_token)
+    ->execute();
+}
+
+/**
+ * Publish an article to Medium.com.
+ */
+function medium_publish_publish_article($author, $node) {
+  $config = medium_publish_config_load($node->type);
+
+  $to_send = array(
+    'title' => token_replace($config->config['title'], array('node' => $node)),
+    'content' => '<h1>' . token_replace($config->config['title'], array('node' => $node)) . '</h1>' . token_replace($config->config['content'], array('node' => $node)),
+    'tags' => token_replace($config->config['tags'], array('node' => $node)),
+    'canonical' => token_replace($config->config['canonical'], array('node' => $node)),
+    'format' => $config->config['format'],
+    'status' => $config->config['status'],
+  );
+  // dpm($to_send);
+}
+
+/**
+ * Page callback for connecting to Medium.com.
+ */
+function medium_publish_user_info($form, &$form_state, $user) {
+  $access_token = medium_publish_load_access_token($user->uid);
+  if ($access_token) {
+    // Connected.
+    $form['connected'] = array(
+      '#markup' => 'You are connected',
+    );
+    $form['actions'] = array(
+      '#type' => 'actions',
+    );
+    $form['access_token'] = array(
+      '#type' => 'value',
+      '#value' => $access_token,
+    );
+    $form['actions']['remove'] = array(
+      '#type' => 'submit',
+      '#value' => 'Remove connection',
+      '#name' => 'remove',
+    );
+  }
+  else {
+    // Connect.
+    $credentials = array(
+      'client_id' => variable_get('medium_publish_client_id', ''),
+      'client_secret' => variable_get('medium_publish_client_secret', ''),
+      'redirect_url' => 'http://da58d695.ngrok.io/api/medium',
+      'state' => 'somesecret',
+      'scopes' => 'basicProfile,publishPost,listPublications',
+    );
+
+    $medium = new MediumDrupal($credentials);
+
+    $form['connected'] = array(
+      '#markup' => l(t('Connect to Medium.com'), $medium->getAuthenticationUrl()),
+    );
+  }
+  return $form;
+}
+
+/**
+ * Submit handler for user tab.
+ */
+function medium_publish_user_info_submit(&$form, &$form_state) {
+  if ($form_state['triggering_element']['#name'] == 'remove') {
+    // Delete from database.
+    medium_publish_delete_user_data($form_state['values']['access_token']);
+    drupal_set_message(t('You have successfully disconnected from Medium.'), 'status');
+  }
+}
+
+/**
+ * Title callback to prettify titles.
+ */
+function medium_publish_config_title($config) {
+  return drupal_ucfirst($config->instance);
+}
