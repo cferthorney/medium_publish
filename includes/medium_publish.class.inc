@@ -1,21 +1,27 @@
 <?php
 /**
  * @file
- * medium.medium.inc
+ * Medium.medium.inc.
  */
 
+/**
+ * Handles communication with Medium.
+ */
 class MediumDrupal {
-  private $api_url = 'https://api.medium.com/v1/';
+  private $apiUrl = 'https://api.medium.com/v1/';
 
-  protected $client_id;
-  protected $client_secret;
+  protected $clientId;
+  protected $clientSecret;
   protected $state;
-  protected $redirect_url;
+  protected $redirectUrl;
   protected $scopes;
 
-  protected $access_token = NULL;
+  protected $accessToken = NULL;
 
-  function __construct($credentials) {
+  /**
+   * Construct.
+   */
+  public function __construct($credentials) {
     $this->setUpCredentials($credentials);
   }
 
@@ -23,55 +29,50 @@ class MediumDrupal {
    * Get the url to authenticate the user to medium.
    *
    * @return string
+   *   Formatted connection url.
    */
   public function getAuthenticationUrl() {
     $params = array(
-      'client_id' => $this->client_id,
+      'client_id' => $this->clientId,
       'scope' => $this->scopes,
       'state' => $this->state,
       'response_type' => 'code',
-      'redirect_uri' => $this->redirect_url,
+      'redirect_uri' => $this->redirectUrl,
     );
     return 'https://medium.com/m/oauth/authorize?' . http_build_query($params);
   }
 
   /**
-   * Get an access token (authenticate) from the user
-   * to make requests to medium's api using the authorization code.
+   * Get an access token (authenticate) from api.
    *
-   * @param string $authorizationCode
+   * @param string $authorization_code
+   *   The authorization code from oAuth flow.
    *
-   * @return void
-   *
-   * @TODO Use drupal_http_request.
+   * @return array
+   *   Array of elements from Medium.
    */
-  public function authenticate($authorizationCode) {
-    // 1. Request access token
-    // 2. Access-token from Client class.
-    $test = $this->requestAccessToken($authorizationCode);
-    return $test;
+  public function authenticate($authorization_code) {
+    return $this->requestAccessToken($authorization_code);
   }
 
   /**
-   * Ask medium for an access token
-   * using the provided authorization code.
+   * Ask medium for an access token.
    *
-   * @param string $authorizationCode
-   * @param string $clientId
-   * @param string $clientSecret
-   * @param string $redirectUrl
+   * @param string $authorization_code
+   *   The authorization code from oAuth flow.
    *
-   * @return string
+   * @return array
+   *   Array of elements from Medium.
    *
    * @TODO Handle errors.
    */
-  public function requestAccessToken($authorizationCode) {
+  public function requestAccessToken($authorization_code) {
     $data = array(
-      'code' => $authorizationCode,
-      'client_id' => $this->client_id,
-      'client_secret' => $this->client_secret,
+      'code' => $authorization_code,
+      'client_id' => $this->clientId,
+      'client_secret' => $this->clientSecret,
       'grant_type' => 'authorization_code',
-      'redirect_uri' => $this->redirect_url,
+      'redirect_uri' => $this->redirectUrl,
     );
     $response_data = $this->request('POST', 'tokens', $data);
 
@@ -86,23 +87,36 @@ class MediumDrupal {
   /**
    * Request a new access token using the refresh token.
    *
-   * @param string $refreshToken
+   * @param string $refresh_token
+   *   The refresh token stored from first auth.
    *
-   * @return string
-   *
-   * @TODO Use drupal_http_request.
+   * @return array
+   *   Array of elements from Medium.
    */
-  public function exchangeRefreshToken($refreshToken) {
+  public function exchangeRefreshToken($refresh_token) {
     $data = array(
-      'refresh_token' => $refreshToken,
-      'client_id' => $this->client_id,
-      'client_secret' => $this->client_secret,
+      'refresh_token' => $refresh_token,
+      'client_id' => $this->clientId,
+      'client_secret' => $this->clientSecret,
       'grant_type' => 'refresh_token',
     );
 
     $response_data = $this->request('POST', 'tokens', $data);
+    $this->accessToken = $response_data->access_token;
 
-    return $response_data->access_token;
+    return array(
+      'access_token' => $response_data->access_token,
+      'refresh_token' => $response_data->refresh_token,
+      'scope' => $response_data->scope,
+      'expires_at' => ($response_data->expires_at / 1000),
+    );
+  }
+
+  /**
+   * Ask for user information.
+   */
+  public function getAuthenticatedUser() {
+    return $this->request('GET', 'me');
   }
 
   /**
@@ -123,20 +137,30 @@ class MediumDrupal {
    * Setup initial api credentials.
    *
    * @param mixed $credentials
-   *
-   * @return void
+   *   The self issued token or array of credentials.
    */
   private function setUpCredentials($credentials) {
     if (is_array($credentials)) {
-      // using full credentials
-      $this->client_id = $credentials['client_id'];
-      $this->client_secret = $credentials['client_secret'];
-      $this->redirect_url = $credentials['redirect_url'];
-      $this->state = $credentials['state'];
-      $this->scopes = $credentials['scopes'];
+      $this->clientId = $credentials['client_id'];
+      $this->clientSecret = $credentials['client_secret'];
+
+      if (isset($credentials['redirect_url'])) {
+        $this->redirectUrl = $credentials['redirect_url'];
+      }
+
+      if (isset($credentials['state'])) {
+        $this->state = $credentials['state'];
+      }
+
+      if (isset($credentials['scopes'])) {
+        $this->scopes = $credentials['scopes'];
+      }
+
+      if (isset($credentials['access_token'])) {
+        $this->accessToken = $credentials['access_token'];
+      }
     }
     else {
-      // using self issued access token
       $this->accessToken = $credentials;
     }
   }
@@ -144,24 +168,24 @@ class MediumDrupal {
   /**
    * Perform requests towards Medium.com.
    */
-  private function request($method, $endpoint, $data) {
+  private function request($method, $endpoint, $data = array()) {
     $headers = array(
       'Content-Type' => 'application/x-www-form-urlencoded',
       'Accept' => 'application/json',
       'Accept-Charset' => 'utf-8',
     );
 
-    if (!is_null($this->access_token)) {
-      $headers['Bearer'] = $this->access_token;
+    if (!is_null($this->accessToken)) {
+      $headers['Authorization'] = 'Bearer ' . $this->accessToken;
     }
 
-    $response = drupal_http_request($this->api_url . $endpoint, array(
+    $response = drupal_http_request($this->apiUrl . $endpoint, array(
       'headers' => $headers,
       'method' => $method,
       'data' => drupal_http_build_query($data),
     ));
-    dpm($response);
 
     return json_decode($response->data);
   }
+
 }

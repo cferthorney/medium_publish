@@ -169,6 +169,8 @@ function medium_publish_auth_callback() {
   $medium = new MediumDrupal($credentials);
 
   $data = $medium->authenticate($authorization_code);
+  $info = $medium->getAuthenticatedUser();
+  $data['medium_id'] = $info->data->id;
 
   medium_publish_save_user_credentials($user, $data);
 
@@ -194,6 +196,7 @@ function medium_publish_save_user_credentials($user, $credentials) {
         'refresh_token' => $credentials['refresh_token'],
         'expires_at' => $credentials['expires_at'],
         'scopes' => implode(',', $credentials['scope']),
+        'medium_id' => $credentials['medium_id'],
       ))
       ->condition('uid', $user->uid, '=')
       ->execute();
@@ -207,6 +210,7 @@ function medium_publish_save_user_credentials($user, $credentials) {
         'refresh_token' => $credentials['refresh_token'],
         'expires_at' => $credentials['expires_at'],
         'scopes' => implode(',', $credentials['scope']),
+        'medium_id' => $credentials['medium_id'],
       ))
       ->execute();
   }
@@ -305,6 +309,7 @@ function medium_publish_config_delete($config) {
  * Form defining tokens for Medium.com.
  *
  * @TODO Write descriptions and better titles.
+ * @TODO Do we need this in a function of its own?
  */
 function medium_publish_config_form(array &$form, $instance, array $config = array()) {
   $form['medium'] = array(
@@ -387,7 +392,7 @@ function medium_publish_form_alter(&$form, &$form_state, $form_id) {
 
     if (isset($node->nid) && $node->nid > 0) {
       // Existing node. Check for publishing.
-      if (medium_node_is_published($node)) {
+      if (medium_publish_node_is_published($node)) {
         return;
       }
     }
@@ -404,17 +409,6 @@ function medium_publish_form_alter(&$form, &$form_state, $form_id) {
       '#title' => 'Publish this node to Medium.com',
       '#description' => 'Checking this node will publish it to ...',
     );
-    $form['medium']['user'] = array(
-      '#type' => 'select',
-      '#default_value' => 'me',
-      '#title' => 'Publish this node to Medium.com',
-      '#description' => 'Checking this node will publish it to ...',
-      '#options' => array(
-        'me' => 'My account',
-        'something' => 'Facebook Inc',
-        'times' => 'Times (Publication)',
-      ),
-    );
   }
 }
 
@@ -424,8 +418,8 @@ function medium_publish_form_alter(&$form, &$form_state, $form_id) {
 function medium_publish_node_insert($node) {
   if (isset($node->medium) && $node->medium['publish'] == 1) {
     // Publish.
-    drupal_set_message('Publishing to Medium.com (dummy)');
-    medium_publish_article($node->medium['user'], $node);
+    drupal_set_message('Publishing to Medium.com');
+    medium_publish_publish_article($node->uid, $node);
   }
 }
 
@@ -435,8 +429,8 @@ function medium_publish_node_insert($node) {
 function medium_publish_node_update($node) {
   if (isset($node->medium) && $node->medium['publish'] == 1) {
     // Publish.
-    drupal_set_message('Publishing to Medium.com (dummy)');
-    medium_publish_article($node->medium['user'], $node);
+    drupal_set_message('Publishing to Medium.com');
+    medium_publish_publish_article($node->uid, $node);
   }
 }
 
@@ -447,7 +441,7 @@ function medium_publish_node_update($node) {
  * option, so we need to know which nodes have been published.
  */
 function medium_publish_node_is_published($node) {
-  $node = db_select('medium_published_nodes', 'p')
+  $node = db_select('medium_publish_nodes', 'p')
     ->fields('p')
     ->condition('nid', $node->nid)
     ->execute()
@@ -460,9 +454,23 @@ function medium_publish_node_is_published($node) {
 }
 
 /**
+ * Mark node as published.
+ */
+function medium_publish_mark_node_published($author, $node) {
+  db_insert('medium_publish_nodes')
+    ->fields(array(
+      'nid' => $node->nid,
+      'uid' => $author->uid,
+      'published' => time(),
+    ))
+    ->execute();
+}
+
+
+/**
  * Load the access tokens this user may use.
  */
-function medium_publish_load_access_token($uid) {
+function medium_publish_load_user($uid) {
   $user_info = db_select('medium_publish_users', 'm')
     ->fields('m')
     ->condition('uid', $uid)
@@ -470,7 +478,7 @@ function medium_publish_load_access_token($uid) {
     ->fetchAssoc();
 
   if ($user_info) {
-    return $user_info['access_token'];
+    return $user_info;
   }
   return FALSE;
 }
@@ -488,25 +496,60 @@ function medium_publish_delete_user_data($access_token) {
  * Publish an article to Medium.com.
  */
 function medium_publish_publish_article($author, $node) {
+  if (!is_object($author)) {
+    $author = user_load($author);
+  }
+
   $config = medium_publish_config_load($node->type);
+  $user_info = medium_publish_load_user($author->uid);
+
+  $client_id = variable_get('medium_publish_client_id', FALSE);
+  $client_secret = variable_get('medium_publish_client_secret', FALSE);
+
+  if (!$client_id || !$client_secret) {
+    return FALSE;
+  }
+
+  $credentials = array(
+    'client_id' => $client_id,
+    'client_secret' => $client_secret,
+    'access_token' => $user_info['access_token'],
+  );
+
+  $medium = new MediumDrupal($credentials);
+
+  if ($user_info['expires_at'] < time()) {
+    // Request new token.
+    $ok = $medium->exchangeRefreshToken($user_info['refresh_token']);
+    if (!$ok) {
+      medium_publish_delete_user_data($user_info['access_token']);
+      return FALSE;
+    }
+  }
+
+  if (!empty($config->disabled)) {
+    return FALSE;
+  }
 
   $to_send = array(
     'title' => token_replace($config->config['title'], array('node' => $node)),
+    'contentFormat' => $config->config['format'],
     'content' => '<h1>' . token_replace($config->config['title'], array('node' => $node)) . '</h1>' . token_replace($config->config['content'], array('node' => $node)),
-    'tags' => token_replace($config->config['tags'], array('node' => $node)),
-    'canonical' => token_replace($config->config['canonical'], array('node' => $node)),
-    'format' => $config->config['format'],
-    'status' => $config->config['status'],
+    'canonicalUrl' => token_replace($config->config['canonical'], array('node' => $node)),
+    'publishStatus' => $config->config['status'],
+    'tags' => explode(',', token_replace($config->config['tags'], array('node' => $node))),
   );
-  // dpm($to_send);
+
+  $medium->createPost($user_info['medium_id'], $to_send);
+  medium_publish_mark_node_published($author, $node);
 }
 
 /**
  * Page callback for connecting to Medium.com.
  */
 function medium_publish_user_info($form, &$form_state, $user) {
-  $access_token = medium_publish_load_access_token($user->uid);
-  if ($access_token) {
+  $user_info = medium_publish_load_user($user->uid);
+  if ($user_info) {
     // Connected.
     $form['connected'] = array(
       '#markup' => 'You are connected',
