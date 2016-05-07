@@ -9,7 +9,7 @@
 /**
  * Implements hook_permission().
  */
-function medium_permission() {
+function medium_publish_permission() {
   $permissions['administer medium'] = array(
     'title' => t('Administer Medium settings'),
     'restrict access' => TRUE,
@@ -28,11 +28,22 @@ function medium_permission() {
 }
 
 /**
+ * Implements hook_help().
+ */
+function medium_publish_help($path, $arg) {
+  switch ($path) {
+    // Main module help for the block module
+    case 'admin/help#medium_publish':
+      return '<p>' . t('Medium Publish allows you to configure content types for export to Medium.com') . '</p>';
+  }
+}
+
+/**
  * Implements hook_menu().
  */
 function medium_publish_menu() {
   $items['admin/config/content/medium'] = array(
-    'title' => 'Medium',
+    'title' => 'Medium Publish',
     'description' => 'Configure Medium defaults.',
     'page callback' => 'medium_publish_config_overview',
     'access arguments' => array('administer medium'),
