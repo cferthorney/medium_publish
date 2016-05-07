@@ -306,77 +306,6 @@ function medium_publish_config_delete($config) {
 }
 
 /**
- * Form defining tokens for Medium.com.
- *
- * @TODO Write descriptions and better titles.
- * @TODO Do we need this in a function of its own?
- */
-function medium_publish_config_form(array &$form, $instance, array $config = array()) {
-  $form['medium'] = array(
-    '#type' => 'fieldset',
-    '#title' => t('Medium'),
-    '#collapsible' => TRUE,
-    '#collapsed' => TRUE,
-    '#multilingual' => TRUE,
-    '#tree' => TRUE,
-    '#access' => user_access('administer medium'),
-    '#weight' => 40,
-    '#attributes' => array(
-      'class' => array('medium-form'),
-    ),
-  );
-
-  $form['medium']['intro_text'] = array(
-    '#markup' => '<p>' . t('Configure the medium export.') . '</p>',
-    '#weight' => -10,
-  );
-
-  $form['medium']['token_tree'] = array(
-    '#theme' => 'token_tree',
-    '#token_types' => array('node'),
-  );
-  $form['medium']['title'] = array(
-    '#type' => 'textfield',
-    '#title' => t('Title'),
-    '#default_value' => (isset($config['title']) ? $config['title'] : ''),
-  );
-  $form['medium']['content'] = array(
-    '#type' => 'textfield',
-    '#title' => t('Content'),
-    '#default_value' => (isset($config['content']) ? $config['content'] : ''),
-  );
-  $form['medium']['format'] = array(
-    '#type' => 'select',
-    '#title' => t('Select format of posts'),
-    '#default_value' => (isset($config['format']) ? $config['format'] : 'html'),
-    '#options' => array(
-      'html' => 'HTML (Recommended)',
-      'markdown' => 'Markdown',
-    ),
-  );
-  $form['medium']['status'] = array(
-    '#type' => 'select',
-    '#title' => t('Select format of posts'),
-    '#default_value' => (isset($config['status']) ? $config['status'] : ''),
-    '#options' => array(
-      'public' => 'Public',
-      'draft' => 'Draft',
-      'unlisted' => 'Unlisted',
-    ),
-  );
-  $form['medium']['canonical'] = array(
-    '#type' => 'textfield',
-    '#title' => t('Canonical URL'),
-    '#default_value' => (isset($config['canonical']) ? $config['canonical'] : ''),
-  );
-  $form['medium']['tags'] = array(
-    '#type' => 'textfield',
-    '#title' => t('Tags'),
-    '#default_value' => (isset($config['tags']) ? $config['tags'] : ''),
-  );
-}
-
-/**
  * Implements hook_form_alter().
  *
  * If the user has access and content type is configured, add a form element.
@@ -531,14 +460,22 @@ function medium_publish_publish_article($author, $node) {
     return FALSE;
   }
 
-  $to_send = array(
-    'title' => token_replace($config->config['title'], array('node' => $node)),
-    'contentFormat' => $config->config['format'],
-    'content' => '<h1>' . token_replace($config->config['title'], array('node' => $node)) . '</h1>' . token_replace($config->config['content'], array('node' => $node)),
-    'canonicalUrl' => token_replace($config->config['canonical'], array('node' => $node)),
-    'publishStatus' => $config->config['status'],
-    'tags' => explode(',', token_replace($config->config['tags'], array('node' => $node))),
-  );
+  $to_send = array();
+
+  $to_send['title'] = token_replace($config->config['title'], array('node' => $node));
+  $to_send['contentFormat'] = $config->config['format'];
+  $to_send['content'] = '<h1>' . $to_send['title'] . '</h1>';
+  $to_send['content'] .= token_replace($config->config['content'], array('node' => $node));
+  $to_send['publishStatus'] = $config->config['status'];
+
+  $canonical = token_replace($config->config['canonical'], array('node' => $node));
+  if (!empty($canonical) && $canonical !== $config->config['canonical']) {
+    $to_send['canonicalUrl'] = $canonical;
+  }
+  $tags = token_replace($config->config['tags'], array('node' => $node));
+  if (!empty($tags) && $tags !== $config->config['tags']) {
+    $to_send['tags'] = explode(',', $tags);
+  }
 
   $medium->createPost($user_info['medium_id'], $to_send);
   medium_publish_mark_node_published($author, $node);

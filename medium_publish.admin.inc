@@ -157,7 +157,7 @@ function medium_publish_config_add_form_submit($form, &$form_state) {
   form_state_values_clean($form_state);
   $config = (object) $form_state['values'];
   medium_publish_config_save($config);
-  $form_state['redirect'] = 'admin/config/content/medium/' . $config->instance;
+  $form_state['redirect'] = 'admin/config/content/medium/config/' . $config->instance;
 }
 
 /**
@@ -173,9 +173,80 @@ function medium_publish_config_edit_form($form, &$form_state, $config) {
     '#value' => $config->instance,
   );
 
-  medium_publish_config_form($form, $config->instance, $config->config);
+  $form['medium'] = array(
+    '#type' => 'container',
+    '#tree' => TRUE,
+  );
 
-  $form['medium']['#type'] = 'container';
+  $form['medium']['intro_text'] = array(
+    '#markup' => '<p>' . t('Configure the medium export.') . '</p>',
+    '#weight' => -10,
+  );
+
+  $form['medium']['token_tree'] = array(
+    '#theme' => 'token_tree',
+    '#token_types' => array('node'),
+  );
+  $form['medium']['title'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Title'),
+    '#default_value' => (isset($config->config['title']) ? $config->config['title'] : ''),
+    '#required' => TRUE,
+  );
+  $form['medium']['content'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Content'),
+    '#default_value' => (isset($config->config['content']) ? $config->config['content'] : ''),
+    '#required' => TRUE,
+    '#description' => t('You can combine multiple fields by adding them in the order you want them to appear.'),
+  );
+  $form['medium']['format'] = array(
+    '#type' => 'select',
+    '#title' => t('Select format of posts'),
+    '#default_value' => (isset($config->config['format']) ? $config->config['format'] : 'html'),
+    '#options' => array(
+      'html' => 'HTML (Recommended)',
+      'markdown' => 'Markdown',
+    ),
+    '#required' => TRUE,
+    '#description' => t('Only switch this to Markdown if you write your posts in Markdown.'),
+  );
+  $form['medium']['status'] = array(
+    '#type' => 'select',
+    '#title' => t('Select format of posts'),
+    '#default_value' => (isset($config->config['status']) ? $config->config['status'] : 'public'),
+    '#options' => array(
+      'public' => 'Public',
+      'draft' => 'Draft',
+      'unlisted' => 'Unlisted',
+    ),
+  );
+  $form['medium']['license'] = array(
+    '#type' => 'select',
+    '#title' => t('License'),
+    '#default_value' => (isset($config->config['license']) ? $config->config['license'] : 'all-rights-reserved'),
+    '#options' => array(
+      'all-rights-reserved' => 'all-rights-reserved',
+      'cc-40-by' => 'cc-40-by',
+      'cc-40-by-sa' => 'cc-40-by-sa',
+      'cc-40-by-nd' => 'cc-40-by-nd',
+      'cc-40-by-nc' => 'cc-40-by-nc',
+      'cc-40-by-nc-nd' => 'cc-40-by-nc-nd',
+      'cc-40-by-nc-sa' => 'cc-40-by-nc-sa',
+      'cc-40-zero' => 'cc-40-zero',
+      'public-domain' => 'public-domain',
+    ),
+  );
+  $form['medium']['canonical'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Canonical URL'),
+    '#default_value' => (isset($config->config['canonical']) ? $config->config['canonical'] : ''),
+  );
+  $form['medium']['tags'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Tags'),
+    '#default_value' => (isset($config->config['tags']) ? $config->config['tags'] : ''),
+  );
 
   $form['actions']['#type'] = 'actions';
   $form['actions']['save'] = array(
