@@ -15,10 +15,6 @@ function medium_publish_permission() {
     'restrict access' => TRUE,
     'description' => t('Configure the integration and which content types are allowed.'),
   );
-  $permissions['publish to sitewide medium'] = array(
-    'title' => t('Publish to Medium with sitewide account'),
-    'description' => t('Write content and publish it to Medium.com with a common account'),
-  );
   $permissions['publish to medium'] = array(
     'title' => t('Publish to Medium'),
     'description' => t('Write content and publish it to Medium.com'),
@@ -32,7 +28,6 @@ function medium_publish_permission() {
  */
 function medium_publish_help($path, $arg) {
   switch ($path) {
-    // Main module help for the block module
     case 'admin/help#medium_publish':
       return '<p>' . t('Medium Publish allows you to configure content types for export to Medium.com') . '</p>';
   }
@@ -96,7 +91,7 @@ function medium_publish_menu() {
   );
 
   $items['admin/config/content/medium/settings'] = array(
-    'title' => 'Medium Settings',
+    'title' => 'Settings',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('medium_publish_admin_settings_form'),
     'access arguments' => array('administer medium'),
@@ -151,6 +146,7 @@ function medium_publish_config_access($op, $config = NULL) {
  */
 function medium_publish_auth_callback() {
   global $user;
+  global $base_url;
 
   if ($user->uid == 0) {
     return drupal_access_denied();
@@ -169,19 +165,24 @@ function medium_publish_auth_callback() {
 
   $authorization_code = $_GET['code'];
 
-  $credentials = [
+  $credentials = array(
     'client_id' => $client_id,
     'client_secret' => $client_secret,
-    'redirect_url' => 'http://da58d695.ngrok.io/api/medium',
+    'redirect_url' => variable_get('medium_publish_redirect_url', $base_url . '/api/medium'),
     'state' => 'somesecret',
     'scopes' => 'basicProfile,publishPost',
-  ];
+  );
 
   $medium = new MediumDrupal($credentials);
 
   $data = $medium->authenticate($authorization_code);
-  $info = $medium->getAuthenticatedUser();
-  $data['medium_id'] = $info->data->id;
+  $user_info = $medium->getAuthenticatedUser();
+  $publications = $medium->getPublications($user_info->data->id);
+
+  $data['data'] = array(
+    'user' => $user_info->data,
+    'publications' => $publications->data,
+  );
 
   medium_publish_save_user_credentials($user, $data);
 
@@ -201,16 +202,7 @@ function medium_publish_save_user_credentials($user, $credentials) {
 
   if ($result) {
     // Existing user.
-    $user_updated = db_update('medium_publish_users')
-      ->fields(array(
-        'access_token' => $credentials['access_token'],
-        'refresh_token' => $credentials['refresh_token'],
-        'expires_at' => $credentials['expires_at'],
-        'scopes' => implode(',', $credentials['scope']),
-        'medium_id' => $credentials['medium_id'],
-      ))
-      ->condition('uid', $user->uid, '=')
-      ->execute();
+    drupal_write_record('medium_publish_users', $credentials, 'uid');
   }
   else {
     // New user.
@@ -221,7 +213,7 @@ function medium_publish_save_user_credentials($user, $credentials) {
         'refresh_token' => $credentials['refresh_token'],
         'expires_at' => $credentials['expires_at'],
         'scopes' => implode(',', $credentials['scope']),
-        'medium_id' => $credentials['medium_id'],
+        'data' => serialize($credentials['data']),
       ))
       ->execute();
   }
@@ -337,6 +329,9 @@ function medium_publish_form_alter(&$form, &$form_state, $form_id) {
       }
     }
 
+    global $user;
+    $user_info = medium_publish_load_user($user->uid);
+
     $form['medium'] = array(
       '#type' => 'fieldset',
       '#group' => 'additional_settings',
@@ -349,6 +344,22 @@ function medium_publish_form_alter(&$form, &$form_state, $form_id) {
       '#title' => 'Publish this node to Medium.com',
       '#description' => 'Checking this node will publish it to ...',
     );
+    $form['medium']['publish_to'] = array(
+      '#type' => 'select',
+      '#options' => medium_publish_get_publishing_options($user_info),
+      '#title' => t('Select account or publication to publish to'),
+      '#required' => TRUE,
+      '#default_value' => 'me',
+      '#states' => array(
+        'visible' => array(
+          ':input[name="medium[publish]"]' => array('checked' => TRUE),
+        ),
+      ),
+    );
+    $form['medium']['user_info'] = array(
+      '#type' => 'value',
+      '#value' => $user_info,
+    );
   }
 }
 
@@ -359,7 +370,7 @@ function medium_publish_node_insert($node) {
   if (isset($node->medium) && $node->medium['publish'] == 1) {
     // Publish.
     drupal_set_message('Publishing to Medium.com');
-    medium_publish_publish_article($node->uid, $node);
+    medium_publish_publish_article($node->medium['publish_to'], $node, $node->medium['user_info']);
   }
 }
 
@@ -370,8 +381,23 @@ function medium_publish_node_update($node) {
   if (isset($node->medium) && $node->medium['publish'] == 1) {
     // Publish.
     drupal_set_message('Publishing to Medium.com');
-    medium_publish_publish_article($node->uid, $node);
+    medium_publish_publish_article($node->medium['publish_to'], $node, $node->medium['user_info']);
   }
+}
+
+/**
+ * List allowed publications for user.
+ */
+function medium_publish_get_publishing_options($user_info) {
+  $options = array(
+    'me' => $user_info['data']['user']->name . ' (Your account)',
+  );
+
+  foreach ($user_info['data']['publications'] as $publication) {
+    $options[$publication->id] = $publication->name;
+  }
+
+  return $options;
 }
 
 /**
@@ -396,11 +422,11 @@ function medium_publish_node_is_published($node) {
 /**
  * Mark node as published.
  */
-function medium_publish_mark_node_published($author, $node) {
+function medium_publish_mark_node_published($uid, $node) {
   db_insert('medium_publish_nodes')
     ->fields(array(
       'nid' => $node->nid,
-      'uid' => $author->uid,
+      'uid' => $uid,
       'published' => time(),
     ))
     ->execute();
@@ -418,6 +444,7 @@ function medium_publish_load_user($uid) {
     ->fetchAssoc();
 
   if ($user_info) {
+    $user_info['data'] = unserialize($user_info['data']);
     return $user_info;
   }
   return FALSE;
@@ -435,13 +462,8 @@ function medium_publish_delete_user_data($access_token) {
 /**
  * Publish an article to Medium.com.
  */
-function medium_publish_publish_article($author, $node) {
-  if (!is_object($author)) {
-    $author = user_load($author);
-  }
-
+function medium_publish_publish_article($publish_id, $node, $user_info) {
   $config = medium_publish_config_load($node->type);
-  $user_info = medium_publish_load_user($author->uid);
 
   $client_id = variable_get('medium_publish_client_id', FALSE);
   $client_secret = variable_get('medium_publish_client_secret', FALSE);
@@ -488,14 +510,21 @@ function medium_publish_publish_article($author, $node) {
     $to_send['tags'] = explode(',', $tags);
   }
 
-  $medium->createPost($user_info['medium_id'], $to_send);
-  medium_publish_mark_node_published($author, $node);
+  if ($publish_id == 'me') {
+    $medium->createPost($user_info['data']['user']->id, $to_send);
+  }
+  else {
+    $medium->createPostforPublication($publish_id, $to_send);
+  }
+  medium_publish_mark_node_published($user_info['uid'], $node);
 }
 
 /**
  * Page callback for connecting to Medium.com.
  */
 function medium_publish_user_info($form, &$form_state, $user) {
+  global $base_url;
+
   $user_info = medium_publish_load_user($user->uid);
   if ($user_info) {
     // Connected.
@@ -507,7 +536,12 @@ function medium_publish_user_info($form, &$form_state, $user) {
     );
     $form['access_token'] = array(
       '#type' => 'value',
-      '#value' => $access_token,
+      '#value' => $user_info['access_token'],
+    );
+    $form['actions']['refresh'] = array(
+      '#type' => 'submit',
+      '#value' => 'Refresh your information',
+      '#name' => 'refresh',
     );
     $form['actions']['remove'] = array(
       '#type' => 'submit',
@@ -520,7 +554,7 @@ function medium_publish_user_info($form, &$form_state, $user) {
     $credentials = array(
       'client_id' => variable_get('medium_publish_client_id', ''),
       'client_secret' => variable_get('medium_publish_client_secret', ''),
-      'redirect_url' => 'http://da58d695.ngrok.io/api/medium',
+      'redirect_url' => variable_get('medium_publish_redirect_url', $base_url . '/api/medium'),
       'state' => 'somesecret',
       'scopes' => 'basicProfile,publishPost,listPublications',
     );
@@ -542,6 +576,34 @@ function medium_publish_user_info_submit(&$form, &$form_state) {
     // Delete from database.
     medium_publish_delete_user_data($form_state['values']['access_token']);
     drupal_set_message(t('You have successfully disconnected from Medium.'), 'status');
+  }
+  elseif ($form_state['triggering_element']['#name'] == 'refresh') {
+    global $user;
+
+    $client_id = variable_get('medium_publish_client_id', FALSE);
+    $client_secret = variable_get('medium_publish_client_secret', FALSE);
+
+    $credentials = array(
+      'client_id' => $client_id,
+      'client_secret' => $client_secret,
+      'access_token' => $form_state['values']['access_token'],
+    );
+
+    $user_info = medium_publish_load_user($user->uid);
+
+    $medium = new MediumDrupal($credentials);
+
+    $new_data = $medium->getAuthenticatedUser();
+    $publications = $medium->getPublications($user_info['data']['user']->id);
+
+    $extra_data = array(
+      'user' => $new_data->data,
+      'publications' => $publications->data,
+    );
+
+    $user_info['data'] = $extra_data;
+
+    medium_publish_save_user_credentials($user, $user_info);
   }
 }
 

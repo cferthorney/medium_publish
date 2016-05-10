@@ -45,10 +45,12 @@ function medium_publish_schema() {
         'default' => '',
         'length' => 255,
       ),
-      'medium_id' => array(
-        'type' => 'varchar',
-        'default' => '',
-        'length' => 255,
+      'data' => array(
+        'type' => 'blob',
+        'not null' => FALSE,
+        'size' => 'big',
+        'serialize' => TRUE,
+        'description' => 'A serialized array of name value pairs that are related to Medium (username, publications...)',
       ),
     ),
     'primary key' => array('uid'),

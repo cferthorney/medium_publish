@@ -76,6 +76,8 @@ class MediumDrupal {
     );
     $response_data = $this->request('POST', 'tokens', $data);
 
+    $this->accessToken = $response_data->access_token;
+
     return array(
       'access_token' => $response_data->access_token,
       'refresh_token' => $response_data->refresh_token,
@@ -117,6 +119,16 @@ class MediumDrupal {
    */
   public function getAuthenticatedUser() {
     return $this->request('GET', 'me');
+  }
+
+  /**
+   * Get the specified user publications.
+   *
+   * @param string $user_id
+   *   The user id we want to get publications for.
+   */
+  public function getPublications($user_id) {
+    return $this->request('GET', 'users/' . $user_id . '/publications');
   }
 
   /**
