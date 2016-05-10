@@ -39,7 +39,7 @@ function medium_publish_schema() {
         'not null' => TRUE,
         'default' => 0,
       ),
-      'scopes' => array(
+      'scope' => array(
         'type' => 'varchar',
         'not null' => TRUE,
         'default' => '',

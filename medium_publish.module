@@ -201,21 +201,19 @@ function medium_publish_save_user_credentials($user, $credentials) {
     ->fetchAssoc();
 
   if ($result) {
-    // Existing user.
-    drupal_write_record('medium_publish_users', $credentials, 'uid');
+    $success = drupal_write_record('medium_publish_users', $credentials, 'uid');
+    if ($success === FALSE) {
+      return FALSE;
+    }
   }
   else {
-    // New user.
-    $medium_user = db_insert('medium_publish_users')
-      ->fields(array(
-        'uid' => $user->uid,
-        'access_token' => $credentials['access_token'],
-        'refresh_token' => $credentials['refresh_token'],
-        'expires_at' => $credentials['expires_at'],
-        'scopes' => implode(',', $credentials['scope']),
-        'data' => serialize($credentials['data']),
-      ))
-      ->execute();
+    $credentials['scope'] = implode(',', $credentials['scope']);
+    $credentials['uid'] = $user->uid;
+
+    $success = drupal_write_record('medium_publish_users', $credentials);
+    if ($success === FALSE) {
+      return FALSE;
+    }
   }
 }
 
@@ -231,22 +229,17 @@ function medium_publish_ctools_plugin_api($owner, $api) {
 }
 
 /**
- * Implements hook_medium_publish_config_default().
+ * Implements hook_hook_info().
  *
- * @TODO Provide a example and the option to disable/enable.
+ * @TODO Add all the hooks.
  */
-/*Function medium_medium_publish_config_default() {
-$export = array();
+function medium_publish_hook_info() {
+  $hooks = array(
+    'medium_publish_config_default',
+  );
 
-$preset = new stdClass;
-$preset->api_version = 1;
-$preset->name = 'my_default_preset';
-$preset->admin_title = 'Default preset';
-$preset->mydata = 'x';
-$export['my_default_preset'] = $preset;
-
-return $export;
-}*/
+  return array_fill_keys($hooks, array('group' => 'medium_publish'));
+}
 
 /**
  * Load a medium configuration record.

@@ -82,7 +82,7 @@ function medium_publish_config_overview() {
     ),
     '#rows' => $rows,
     '#empty' => t('No content type configs yet'),
-    '#suffix' => '<p>' . t('Only content types with a config defined will have the option to publish to Medium.') . '</p>',
+    '#suffix' => '<p>' . t('Only content types with a enabled config defined will have the option to publish to Medium.') . '</p>',
   );
 
   return $build;
