@@ -170,7 +170,7 @@ function medium_publish_auth_callback() {
     'client_secret' => $client_secret,
     'redirect_url' => variable_get('medium_publish_redirect_url', $base_url . '/api/medium'),
     'state' => 'somesecret',
-    'scopes' => 'basicProfile,publishPost',
+    'scopes' => 'basicProfile,publishPost,listPublications',
   );
 
   $medium = new MediumDrupal($credentials);
