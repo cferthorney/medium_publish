@@ -36,9 +36,7 @@ class MediumPublishTestCase extends DrupalWebTestCase {
       'publish to medium',
       'administer site configuration',
     ));
-    $this->unPrivilegedUser = $this->drupalCreateUser(array(
-      'administer site configuration',
-    ));
+    $this->unPrivilegedUser = $this->drupalCreateUser();
     $this->drupalLogin($this->privilegedUser);
   }
 

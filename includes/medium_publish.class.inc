@@ -197,7 +197,17 @@ class MediumDrupal {
       'data' => drupal_http_build_query($data),
     ));
 
-    return json_decode($response->data);
+    $json = json_decode($response->data);
+    if ($response->code >= 400) {
+      if (isset($json->errors[0])) {
+        throw new MediumDrupalException($response->status_message, $response->code, $json->errors[0]->message, $json->errors[0]->code);
+      }
+      else {
+        throw new MediumDrupalException($response->status_message, $response->code);
+      }
+    }
+
+    return $json;
   }
 
 }

@@ -159,6 +159,11 @@ function medium_publish_auth_callback() {
     return drupal_access_denied();
   }
 
+  if (isset($_GET['error']) && $_GET['error'] == 'access_denied') {
+    drupal_set_message(t('User declined access to Medium account.'), 'warning');
+    drupal_goto();
+  }
+
   if (!isset($_GET['code'])) {
     return drupal_access_denied();
   }
@@ -175,7 +180,18 @@ function medium_publish_auth_callback() {
 
   $medium = new MediumDrupal($credentials);
 
-  $data = $medium->authenticate($authorization_code);
+  try {
+    $data = $medium->authenticate($authorization_code);
+  }
+  catch (MediumDrupalException $e) {
+    watchdog('medium_publish', 'Unable to authenticate. Medium responded with @code: @message', array(
+      '@code' => $e->getCode(),
+      '@message' => $e->getMessage()
+    ));
+    drupal_set_message(t('Something went wrong while authenicating with Medium, please try again later'), 'error');
+    drupal_goto();
+  }
+
   $user_info = $medium->getAuthenticatedUser();
   $publications = $medium->getPublications($user_info->data->id);
 
@@ -230,12 +246,14 @@ function medium_publish_ctools_plugin_api($owner, $api) {
 
 /**
  * Implements hook_hook_info().
- *
- * @TODO Add all the hooks.
  */
 function medium_publish_hook_info() {
   $hooks = array(
     'medium_publish_config_default',
+    'medium_publish_config_presave',
+    'medium_publish_config_insert',
+    'medium_publish_config_update',
+    'medium_publish_config_delete',
   );
 
   return array_fill_keys($hooks, array('group' => 'medium_publish'));
@@ -311,6 +329,14 @@ function medium_publish_form_alter(&$form, &$form_state, $form_id) {
   if (!empty($form['#node_edit_form'])) {
     $node = $form['#node'];
 
+    $client_id = variable_get('medium_publish_client_id', FALSE);
+    $client_secret = variable_get('medium_publish_client_secret', FALSE);
+
+    if (!$client_id || !$client_secret) {
+      // Integration is not configured.
+      return;
+    }
+
     if (!medium_publish_config_load($node->type) || !user_access('publish to medium')) {
       return;
     }
@@ -324,6 +350,9 @@ function medium_publish_form_alter(&$form, &$form_state, $form_id) {
 
     global $user;
     $user_info = medium_publish_load_user($user->uid);
+    if (!$user_info) {
+      return;
+    }
 
     $form['medium'] = array(
       '#type' => 'fieldset',
@@ -387,7 +416,7 @@ function medium_publish_get_publishing_options($user_info) {
   );
 
   foreach ($user_info['data']['publications'] as $publication) {
-    $options[$publication->id] = $publication->name;
+    $options[t('Publications')][$publication->id] = $publication->name;
   }
 
   return $options;

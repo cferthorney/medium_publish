@@ -11,6 +11,22 @@
  */
 
 /**
+ * Implements hook_uninstall().
+ */
+function medium_publish_uninstall() {
+  $variables = array(
+    'medium_publish_client_id',
+    'medium_publish_client_secret',
+    'medium_publish_load_defaults',
+    'medium_publish_redirect_url',
+  );
+
+  foreach ($variables as $variable) {
+    variable_del($variable);
+  }
+}
+
+/**
  * Implements hook_schema().
  */
 function medium_publish_schema() {
