@@ -1,0 +1,74 @@
+<?php
+/**
+ * @file
+ * Tests.
+ */
+
+/**
+ * Tests the functionality of the Simpletest example content type.
+ */
+class MediumPublishTestCase extends DrupalWebTestCase {
+  protected $privilegedUser;
+  protected $unPrivilegedUser;
+
+  /**
+   * Information about this test.
+   */
+  public static function getInfo() {
+    // Note: getInfo() strings are not translated with t().
+    return array(
+      'name' => 'Medium Publish',
+      'description' => 'Ensure that Medium Publish module works correctly',
+      'group' => 'Medium Publish',
+    );
+  }
+
+  /**
+   * Create some users and log in.
+   */
+  public function setUp() {
+    // Enable any modules required for the test. This should be an array of
+    // module names.
+    parent::setUp(array('medium_publish'));
+    // Create and log in our privileged user.
+    $this->privilegedUser = $this->drupalCreateUser(array(
+      'administer medium',
+      'publish to medium',
+      'administer site configuration',
+    ));
+    $this->unPrivilegedUser = $this->drupalCreateUser(array(
+      'administer site configuration',
+    ));
+    $this->drupalLogin($this->privilegedUser);
+  }
+
+  /**
+   * Make sure admin page is accessible for admin user.
+   */
+  public function testAdminPageExists() {
+    $this->drupalGet('admin/config/content/medium');
+    $this->assertText(t('Only content types with a enabled config defined will have the option to publish to Medium.'), 'Admin page is available');
+  }
+
+  /**
+   * Test that warning message is shown when missing variables.
+   */
+  public function testAdminPageShowsWarning() {
+    $this->drupalGet('admin/config/content/medium');
+
+    $this->assertRaw(t('Medium integration must be configured for this to work. Please go to <a href="@link">settings</a> and configure it.', array(
+      '@link' => url('admin/config/content/medium/settings'),
+    )), 'Warning should be displayed when app is not configured');
+  }
+
+  /**
+   * Should not have access without correct permission.
+   */
+  public function testAdminPageNoAccess() {
+    $this->drupalLogin($this->unPrivilegedUser);
+    $this->drupalGet('admin/config/content/medium');
+
+    $this->assertResponse(403, 'Access is denied on the administration page.');
+  }
+
+}

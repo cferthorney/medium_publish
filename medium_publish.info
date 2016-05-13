@@ -7,3 +7,4 @@ dependencies[] = token
 dependencies[] = ctools
 
 files[] = includes/medium_publish.class.inc
+files[] = includes/medium_publish.test
