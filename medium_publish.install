@@ -121,7 +121,7 @@ function medium_publish_schema() {
         'length' => 255,
         'not null' => TRUE,
         'default' => '',
-        'description' => 'The machine-name of the configuration, typically bundle.',
+        'description' => 'The machine-name of the configuration, always the bundle name.',
       ),
       'config' => array(
         'type' => 'blob',
