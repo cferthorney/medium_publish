@@ -186,19 +186,27 @@ function medium_publish_auth_callback() {
   catch (MediumDrupalException $e) {
     watchdog('medium_publish', 'Unable to authenticate. Medium responded with @code: @message', array(
       '@code' => $e->getCode(),
-      '@message' => $e->getMessage()
+      '@message' => $e->getMessage(),
     ));
     drupal_set_message(t('Something went wrong while authenicating with Medium, please try again later'), 'error');
     drupal_goto();
   }
 
-  $user_info = $medium->getAuthenticatedUser();
-  $publications = $medium->getPublications($user_info->data->id);
+  try {
+    $user_info = $medium->getAuthenticatedUser();
+    $publications = $medium->getPublications($user_info->data->id);
 
-  $data['data'] = array(
-    'user' => $user_info->data,
-    'publications' => $publications->data,
-  );
+    $data['data'] = array(
+      'user' => $user_info->data,
+      'publications' => $publications->data,
+    );
+  }
+  catch (MediumDrupalException $e) {
+    watchdog('medium_publish', 'Unable to fetch user information. Medium responded with @code: @message', array(
+      '@code' => $e->getCode(),
+      '@message' => $e->getMessage(),
+    ));
+  }
 
   medium_publish_save_user_credentials($user, $data);
 
@@ -231,6 +239,7 @@ function medium_publish_save_user_credentials($user, $credentials) {
       return FALSE;
     }
   }
+  return TRUE;
 }
 
 /**
@@ -390,8 +399,6 @@ function medium_publish_form_alter(&$form, &$form_state, $form_id) {
  */
 function medium_publish_node_insert($node) {
   if (isset($node->medium) && $node->medium['publish'] == 1) {
-    // Publish.
-    drupal_set_message('Publishing to Medium.com');
     medium_publish_publish_article($node->medium['publish_to'], $node, $node->medium['user_info']);
   }
 }
@@ -401,8 +408,6 @@ function medium_publish_node_insert($node) {
  */
 function medium_publish_node_update($node) {
   if (isset($node->medium) && $node->medium['publish'] == 1) {
-    // Publish.
-    drupal_set_message('Publishing to Medium.com');
     medium_publish_publish_article($node->medium['publish_to'], $node, $node->medium['user_info']);
   }
 }
@@ -504,9 +509,18 @@ function medium_publish_publish_article($publish_id, $node, $user_info) {
 
   if ($user_info['expires_at'] < time()) {
     // Request new token.
-    $ok = $medium->exchangeRefreshToken($user_info['refresh_token']);
-    if (!$ok) {
-      medium_publish_delete_user_data($user_info['access_token']);
+    try {
+      $ok = $medium->exchangeRefreshToken($user_info['refresh_token']);
+      if (!$ok) {
+        medium_publish_delete_user_data($user_info['access_token']);
+        return FALSE;
+      }
+    }
+    catch (MediumDrupalException $e) {
+      watchdog('medium_publish', 'Unable to refresh token. Medium responded with @code: @message', array(
+        '@code' => $e->getCode(),
+        '@message' => $e->getMessage(),
+      ));
       return FALSE;
     }
   }
@@ -532,13 +546,22 @@ function medium_publish_publish_article($publish_id, $node, $user_info) {
     $to_send['tags'] = explode(',', $tags);
   }
 
-  if ($publish_id == 'me') {
-    $medium->createPost($user_info['data']['user']->id, $to_send);
+  try {
+    if ($publish_id == 'me') {
+      $medium->createPost($user_info['data']['user']->id, $to_send);
+    }
+    else {
+      $medium->createPostforPublication($publish_id, $to_send);
+    }
+    medium_publish_mark_node_published($user_info['uid'], $node);
   }
-  else {
-    $medium->createPostforPublication($publish_id, $to_send);
+  catch (MediumDrupalException $e) {
+    watchdog('medium_publish', 'Unable to publish. Medium responded with @code: @message', array(
+      '@code' => $e->getCode(),
+      '@message' => $e->getMessage(),
+    ));
+    return FALSE;
   }
-  medium_publish_mark_node_published($user_info['uid'], $node);
 }
 
 /**
@@ -614,18 +637,26 @@ function medium_publish_user_info_submit(&$form, &$form_state) {
     $user_info = medium_publish_load_user($user->uid);
 
     $medium = new MediumDrupal($credentials);
+    try {
+      $new_data = $medium->getAuthenticatedUser();
+      $publications = $medium->getPublications($user_info['data']['user']->id);
 
-    $new_data = $medium->getAuthenticatedUser();
-    $publications = $medium->getPublications($user_info['data']['user']->id);
+      $extra_data = array(
+        'user' => $new_data->data,
+        'publications' => $publications->data,
+      );
 
-    $extra_data = array(
-      'user' => $new_data->data,
-      'publications' => $publications->data,
-    );
+      $user_info['data'] = $extra_data;
 
-    $user_info['data'] = $extra_data;
-
-    medium_publish_save_user_credentials($user, $user_info);
+      medium_publish_save_user_credentials($user, $user_info);
+    }
+    catch (MediumDrupalException $e) {
+      watchdog('medium_publish', 'Unable to refresh user information. Medium responded with @code: @message', array(
+        '@code' => $e->getCode(),
+        '@message' => $e->getMessage(),
+      ));
+      drupal_set_message(t('Unable to refresh user information.'), 'error');
+    }
   }
 }
 
