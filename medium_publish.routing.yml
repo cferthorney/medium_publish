@@ -1,0 +1,8 @@
+medium_publish.admin:
+  path: 'admin/config/content/medium'
+  defaults:
+    _controller: '\Drupal\medium_publish\Controller\mediumPublishController::adminOverview'
+    _title: 'Medium Publish'
+    _form: '\Drupal\medium_publish\Form\MediumSettingsForm''
+  requirements:
+    _permission: 'administer medium'

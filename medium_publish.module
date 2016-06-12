@@ -6,6 +6,8 @@
  * Api documentation: https://github.com/Medium/medium-api-docs.
  */
 
+use Drupal\Core\Routing\RouteMatchInterface;
+
 /**
  * Implements hook_permission().
  */
@@ -28,7 +30,7 @@ function medium_publish_permission() {
  */
 function medium_publish_help($path, $arg) {
   switch ($path) {
-    case 'admin/help#medium_publish':
+    case 'admin.help.medium_publish':
       return '<p>' . t('Medium Publish allows you to configure content types for export to Medium.com') . '</p>';
   }
 }

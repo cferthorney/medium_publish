@@ -1,0 +1,11 @@
+name: Medium Publish
+description: Allows publishing to medium.com
+core: 8.x
+type: module
+package: Content
+
+dependencies:
+  - token
+  - ctools
+
+

@@ -1,0 +1,4 @@
+medium_publish.admin:
+  route_name: medium_publish.admin
+  title: 'Medium Publish'
+  base_route: system.admin_content

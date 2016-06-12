@@ -1,27 +1,21 @@
 <?php
 /**
  * @file
- * Tests.
+ * Tests for medium publish module.
  */
+
+namespace Drupal\tracker\Tests;
+
+use Drupal\simpletest\WebTestBase;
 
 /**
- * Tests the functionality of the Simpletest example content type.
+ * Ensure that Medium Publish module works correctly.
+ *
+ * @group medium_publish
  */
-class MediumPublishTestCase extends DrupalWebTestCase {
+class MediumPublishTestCase extends WebTestBase {
   protected $privilegedUser;
   protected $unPrivilegedUser;
-
-  /**
-   * Information about this test.
-   */
-  public static function getInfo() {
-    // Note: getInfo() strings are not translated with t().
-    return array(
-      'name' => 'Medium Publish',
-      'description' => 'Ensure that Medium Publish module works correctly',
-      'group' => 'Medium Publish',
-    );
-  }
 
   /**
    * Create some users and log in.
@@ -29,7 +23,7 @@ class MediumPublishTestCase extends DrupalWebTestCase {
   public function setUp() {
     // Enable any modules required for the test. This should be an array of
     // module names.
-    parent::setUp(array('medium_publish'));
+    parent::setUp();
     // Create and log in our privileged user.
     $this->privilegedUser = $this->drupalCreateUser(array(
       'administer medium',
