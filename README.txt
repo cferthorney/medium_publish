@@ -2,8 +2,10 @@ Medium Publish
 -------
 This module allows you to publish/export your content to Medium.com.
 
-This module can be found on D.O at https://www.drupal.org/project/medium_publish.  
+This module can be found on D.O at https://www.drupal.org/project/medium_publish.
 Originally written for D7 by andeersg (@andeersg on Github and D.O)
+
+Current status: NOT TESTED!  This will probably (at present) break your D8 site.
 
 
 Configuration

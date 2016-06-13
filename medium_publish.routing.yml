@@ -3,6 +3,20 @@ medium_publish.admin:
   defaults:
     _controller: '\Drupal\medium_publish\Controller\mediumPublishController::adminOverview'
     _title: 'Medium Publish'
-    _form: '\Drupal\medium_publish\Form\MediumSettingsForm''
   requirements:
     _permission: 'administer medium'
+medium_publish.settings:
+  path: 'admin/config/content/medium/settings'
+  defaults:
+      _form: '\Drupal\medium_publish\Form\MediumSettingsForm'
+      _title: 'Settings'
+  requirements:
+    _permission: 'administer site configuration'
+medium_publish.user.medium:
+  path: 'user/{user}/medium'
+  defaults:
+      _entity_form: user.medium_publish
+      _title: 'Medium.com Integration'
+  requirements:
+      _permission: 'publish to medium'
+      _entity_access: 'user.view'

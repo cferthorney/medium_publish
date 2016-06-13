@@ -2,3 +2,12 @@ medium_publish.admin:
   route_name: medium_publish.admin
   title: 'Medium Publish'
   base_route: system.admin_content
+medium_publish.admin.config:
+  route_name: medium_publish.admin
+  title: 'Configuration'
+  parent_id: medium_publish.admin
+medium_publish.settings:
+  route_name: medium_publish.settings
+  title: 'Settings'
+  parent_id: medium_publish.admin
+  weight: 8
